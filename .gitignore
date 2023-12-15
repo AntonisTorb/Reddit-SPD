@@ -1,0 +1,12 @@
+env
+__pycache__
+.vscode
+*.txt
+!requirements.txt
+*.mp4
+*.gif
+*.jpg
+*.exe
+*.json
+Archive
+.log
