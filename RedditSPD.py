@@ -121,7 +121,7 @@ class RedditSPD:
         }
 
 
-    def _get_request_with_retries(self, url: str, headers: dict[str,str], acceptable_codes: list) -> requests.Response:
+    def _get_request_with_retries(self, url: str, headers: dict[str,str], acceptable_codes: list) -> requests.Response | None:
         '''Perform request with retries if the request status code is not in the provided list and return the response.'''
 
         retries = self.retries
@@ -130,6 +130,8 @@ class RedditSPD:
             retries -= 1
             time.sleep(2 - random.random())
             r = self.session.get(url, headers=headers, stream=True)
+        if r.status_code not in acceptable_codes:
+            raise ConnectionError("Response status code not in list.")
         return r
     
 
@@ -184,9 +186,7 @@ class RedditSPD:
         
         # Get info on video content length.
         r_vid_info = self._get_request_with_retries(video_url, self.headers["headers_info"], [206])
-        if r_vid_info.status_code != 206:
-            print(f"Error {r_vid_info.status_code} getting info.")
-            return
+
         max_vid = int(r_vid_info.headers["Content-Length"])
 
         # Get video file in chunks or all at once depending on size.
@@ -199,11 +199,7 @@ class RedditSPD:
 
                 # Get video file.
                 r_video = self._get_request_with_retries(video_url, self.headers["headers_video"], [206])
-                if r_video.status_code != 206:
-                    #print(f"Error {r_video.status_code} getting video.")
-                    if Path(self.video_path / f"_video-{id}.mp4").exists():
-                        os.remove(self.video_path / f"_video-{id}.mp4")
-                    return
+
                 with open(self.video_path / f"_video-{id}.mp4", "ab") as file:
                     file.write(r_video.content)
         else:
@@ -211,11 +207,7 @@ class RedditSPD:
 
             # Get video file.
             r_video = self._get_request_with_retries(video_url, self.headers["headers_video"], [206])
-            if r_video.status_code != 206:
-                print(f"Error {r_video.status_code} getting video file.")
-                if Path(self.video_path / f"_video-{id}.mp4").exists():
-                    os.remove(self.video_path / f"_video-{id}.mp4")
-                return
+
             with open(self.video_path / f"_video-{id}.mp4", "wb") as file:
                 file.write(r_video.content)
 
@@ -238,10 +230,6 @@ class RedditSPD:
             audio_url = audio_url.replace("AUDIO_128", "audio")  # Older format.
             time.sleep(2)
             r_aud_info = self._get_request_with_retries(audio_url, self.headers["headers_audio"], [206])
-
-        if r_aud_info.status_code != 206:
-            print(f"Error {r_aud_info.status_code} getting audio info.")
-            return
         
         max_aud = int(r_aud_info.headers["Content-Range"].split("/")[1])
 
@@ -255,11 +243,7 @@ class RedditSPD:
 
                 # Get video file.
                 r_audio = self._get_request_with_retries(audio_url, self.headers["headers_audio"], [206])
-                if r_audio.status_code != 206:
-                    print(f"Error {r_audio.status_code} getting audio.")
-                    if Path(self.video_path / f"_audio-{id}.mp4").exists():
-                        os.remove(self.video_path / f"_audio-{id}.mp4")
-                    return
+
                 with open(self.video_path / f"_audio-{id}.mp4", "ab") as file:
                     file.write(r_audio.content)
         else:
@@ -267,9 +251,7 @@ class RedditSPD:
 
             # Get audio file.
             r_audio = self._get_request_with_retries(audio_url, self.headers["headers_audio"], [206])
-            if r_audio.status_code != 206:
-                print(f"Error {r_audio.status_code} getting audio file.")
-                return
+
             with open(self.video_path / f"_audio-{id}.mp4", "wb") as file:
                 file.write(r_audio.content)
 
@@ -283,7 +265,7 @@ class RedditSPD:
             os.remove(self.video_path / f"_video-{id}.mp4")
             os.remove(self.video_path / f"_audio-{id}.mp4")
         except:
-            print("FFMPEG error, leaving separate video and audio files.")
+            raise Exception("FFMPEG error, leaving separate video and audio files.")
         
         try:
             # Add metadata to video file.
@@ -294,7 +276,7 @@ class RedditSPD:
             os.remove(self.video_path / f"_{id}.mp4")
         except:
             os.rename(self.video_path / f"_{id}.mp4", self.video_path / f"{id}.mp4")
-            print("FFMPEG error, can't add metadata.")
+            raise Exception("FFMPEG error, can't add metadata.")
 
 
     def _determine_post_type(self, post: dict) -> str:
@@ -337,7 +319,7 @@ class RedditSPD:
             try:
                 post = {"data": post["data"]["crosspost_parent_list"][0]}
                 return self._determine_post_type(post)
-            except IndexError:
+            except IndexError:  # Sometimes link posts are marked as crossposts when they aren't...
                 return "link"
         
         # Comment:
@@ -502,7 +484,7 @@ class RedditSPD:
             if not pass_it:
                 try:
                     print(f'Getting data from [{index + 1}/{total_saved}]" {post["data"]["title"]}"...')
-                except KeyError:
+                except KeyError:  # Comment.
                     print(f'Getting data from [{index + 1}/{total_saved}]" {post["data"]["link_title"]}"...')
                 try:
                     self._get_content(post)
