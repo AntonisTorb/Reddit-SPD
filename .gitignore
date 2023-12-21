@@ -9,4 +9,4 @@ __pycache__
 *.exe
 *.json
 Archive
-.log
+*.log

@@ -12,7 +12,10 @@ import requests
 
 
 class RedditSPD:
-
+    '''Class used to downlaod all saved posts from a Redit account.
+    Use method `start_dl` and provide your `username` and `password` to begin downloading.
+    Optionally, provide `from_id` and/or `to_id` to specify the Reddit post IDs as the 
+    starting point and ending point for the download.'''
 
     def __init__(self) -> None:
 
@@ -23,6 +26,8 @@ class RedditSPD:
         self.selfpost_path = ""
         self.session = requests.session()
         self.retries = 5
+        self.vid_size_cutoff = 2097152
+        self.vid_chunk_size = 1048576
         self.headers = {
             "headers_img": {
                 "Accept": "image/avif,image/webp,*/*",
@@ -178,7 +183,7 @@ class RedditSPD:
         self.headers["headers_video"]["Range"] = ""
         self.headers["headers_audio"]["Range"] = "bytes=0-899"
         
-        # Just in case.
+        # Just in case files are leftover from a failed attempt.
         if Path(self.video_path / f"_vid-{id}.mp4").exists():
             os.remove(self.video_path / f"_vid-{id}.mp4")
         if Path(self.video_path / f"_audio-{id}.mp4").exists():
@@ -190,11 +195,11 @@ class RedditSPD:
         max_vid = int(r_vid_info.headers["Content-Length"])
 
         # Get video file in chunks or all at once depending on size.
-        if max_vid > 2097152:
-            parts = max_vid // 1048576 + 1
-            for part in range(0, parts):
-                start = part * 1048576 + 1 if part > 0 else 0
-                end = (part+1) * 1048576 if (part+1) * 1048576 < max_vid else max_vid
+        if max_vid > self.vid_size_cutoff:
+            parts = max_vid // self.vid_chunk_size
+            for part in range(parts + 1):
+                start = part * self.vid_chunk_size + 1 if part > 0 else 0
+                end = (part+1) * self.vid_chunk_size if (part+1) * self.vid_chunk_size < max_vid else max_vid
                 self.headers["headers_video"]["Range"] = f"bytes={start}-{end}"
 
                 # Get video file.
@@ -234,11 +239,11 @@ class RedditSPD:
         max_aud = int(r_aud_info.headers["Content-Range"].split("/")[1])
 
         # Get audio file in chunks or all at once depending on size.
-        if max_aud > 2097152:
-            parts = max_aud // 1048576 + 1
-            for part in range(0, parts):
-                start = part * 1048576 + 1 if part > 0 else 0
-                end = (part+1) * 1048576 if (part+1) * 1048576 < max_aud else max_aud
+        if max_aud > self.vid_size_cutoff:
+            parts = max_aud // self.vid_chunk_size
+            for part in range(parts + 1):
+                start = part * self.vid_chunk_size + 1 if part > 0 else 0
+                end = (part+1) * self.vid_chunk_size if (part+1) * self.vid_chunk_size < max_aud else max_aud
                 self.headers["headers_audio"]["Range"] = f"bytes={start}-{end}"
 
                 # Get video file.
@@ -275,7 +280,8 @@ class RedditSPD:
             )
             os.remove(self.video_path / f"_{id}.mp4")
         except:
-            os.rename(self.video_path / f"_{id}.mp4", self.video_path / f"{id}.mp4")
+            if Path(self.video_path / f"_{id}.mp4").exists():
+                os.rename(self.video_path / f"_{id}.mp4", self.video_path / f"{id}.mp4")
             raise Exception("FFMPEG error, can't add metadata.")
 
 
@@ -483,9 +489,9 @@ class RedditSPD:
 
             if not pass_it:
                 try:
-                    print(f'Getting data from [{index + 1}/{total_saved}]" {post["data"]["title"]}"...')
-                except KeyError:  # Comment.
-                    print(f'Getting data from [{index + 1}/{total_saved}]" {post["data"]["link_title"]}"...')
+                    print(f'Getting data from [{index + 1}/{total_saved}] "{post["data"]["title"]}"...')
+                except KeyError:  # Saved comment.
+                    print(f'Getting data from [{index + 1}/{total_saved}] "{post["data"]["link_title"]}"...')
                 try:
                     self._get_content(post)
                     archive_counter += 1
